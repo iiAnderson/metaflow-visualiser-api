@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Stack for complete deployment of Metaflow infrastructure
+
+Parameters:
+  EnvName:
+    Type: String
+  ProjectName:
+    Type: String
+  VPCCidr: 
+    Type: String
+    Default: 10.20.0.0/16
+    Description: 'CIDR for the Metaflow VPC'
+  Subnet1Cidr: 
+    Type: String
+    Default: 10.20.0.0/24
+    Description: 'CIDR for Subnet 1'
+  Subnet2Cidr: 
+    Type: String
+    Default: 10.20.1.0/24
+    Description: 'CIDR for Subnet 2'
+
+Resources:
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      CidrBlock: !Ref VPCCidr
+      
+  Subnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+         Fn::Select:
+         - 0
+         - Fn::GetAZs: {Ref: 'AWS::Region'}
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref Subnet1Cidr
+      MapPublicIpOnLaunch: true
+
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+         Fn::Select:
+         - 1
+         - Fn::GetAZs: {Ref: 'AWS::Region'}
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref Subnet2Cidr
+      MapPublicIpOnLaunch: true
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  GatewayAttachement:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref 'VPC'
+      InternetGatewayId: !Ref 'InternetGateway'
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+
+  DefaultGateway:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachement
+    Properties:
+      RouteTableId: !Ref 'PublicRouteTable'
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref 'InternetGateway'
+
+  Subnet1RTA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  Subnet2RTA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet2
+      RouteTableId: !Ref PublicRouteTable
+
+Outputs:
+  VPC:
+    Value: !Ref VPC
+    Description: "VPC ID for Metaflow"
+  VPCCidr:
+    Value: !GetAtt VPC.CidrBlock
+    Description: "VPC CIDR for Metaflow"
+  Subnet1:
+    Value: !Ref Subnet1
+    Description: "Subnet 1 for Metaflow VPC"
+  Subnet2:
+    Value: !Ref Subnet2
+    Description: "Subnet 2 for Metaflow VPC"
