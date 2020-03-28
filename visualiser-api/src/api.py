@@ -1,9 +1,11 @@
 from metaflow import Metaflow, Flow, get_metadata, metadata, namespace, Run
+from wrappers import RunWrapper, FlowWrapper, StepWrapper, MetaflowWrapper
 from exception import MetaflowException
 from datetime import datetime, timedelta 
 from dateutil import parser
 import re
 import json
+import itertools
 
 def get_request_info(event):
 
@@ -23,37 +25,89 @@ def get_request_info(event):
         "parameters": parameters
     }
 
-def count_flows():
+'''
+
+    Endpoints returning Run data
+
+'''
+
+def route_flows():
+
     namespace(None)
 
-    flows = Metaflow().flows
+    m_wrapper = MetaflowWrapper()
+    result = m_wrapper.get_formatted_flows()
 
-    result = get_week_times()
+    return {"data": result}
 
-    for flow in list(flows):
+def all_runs_since(flow_name=None,timestamp=(datetime.now() - timedelta(days=1)).timestamp()):
+    
+    namespace(None)
+
+    if flow_name is None:
+        flows = MetaflowWrapper().get_flows()
+    else:
+        flows = [FlowWrapper(flow_name=flow_name)]
+
+    return_runs = []
+
+    for flow in flows:
+        return_runs.extend(flow.get_runs(timestamp=timestamp))
+
+    return {"data": sorted(return_runs, key = lambda r: (r['created_at']))}
+
+def get_most_recent(flow_name):
+    namespace(None)
+
+    flow = FlowWrapper(flow_name)
+
+    last_run = flow.get_last_successful_run().json_with_steps()
+
+    if last_run is None:
+        return {}
+    
+    return {"data": last_run}
+
+def get_last_n(flow_name, n=5):
+    namespace(None)
+
+    flow = FlowWrapper(flow_name)
+    
+    runs = flow.get_most_recent_runs(n)
         
-        for run in flow.runs():
-            print(run.created_at)
-            flow_datetime = datetime.strptime(run.created_at.split(".")[0], '%Y-%m-%dT%H:%M:%S')
-            a_week_ago = (datetime.now() - timedelta(days=7))
+    return {"data": runs}
 
-            if flow_datetime.timestamp() < a_week_ago.timestamp():
-                # Flows are in order, so if we've reached one after a week ago then we can break from execution
-                break 
+'''
 
-            flow_formatted_time = get_formatted_time(flow_datetime)
+    Endpoints returning count information
 
-            if flow_formatted_time in result:
-                result[flow_formatted_time] = result[flow_formatted_time] + 1
+'''
 
-    formatted = []
+def count_runs(flow_name=None):
+    namespace(None)
 
-    for key, value in result.items():
-        formatted.append({"time": key, "count": value})
+    count_categories = get_week_times()
 
-    return {"data": formatted}
+    def key_parser(run):
+        return get_formatted_time(datetime.strptime(run.created_at.split(".")[0], '%Y-%m-%dT%H:%M:%S'))
 
+    def stop_condition(run):
+        a_week_ago = (datetime.now() - timedelta(days=7))
+        flow_datetime = datetime.strptime(run.created_at.split(".")[0], '%Y-%m-%dT%H:%M:%S')
 
+        return flow_datetime.timestamp() < a_week_ago.timestamp()
+
+    if flow_name is None:
+        return_counts = MetaflowWrapper().get_count(count_categories, key_parser, stop_condition)
+    else:
+        return_counts = FlowWrapper(flow_name=flow_name).get_count(count_categories, key_parser, stop_condition)
+
+    return_data = []
+
+    for key, value in return_counts.items():
+        return_data.append({"time": key, "count": value})
+
+    return {"data": return_data} 
 
 def get_week_times():
     now = datetime.now()
@@ -69,63 +123,11 @@ def get_week_times():
 def get_formatted_time(datetime_obj):
     return f"{datetime_obj.month}/{datetime_obj.day}"
 
-def route_flows():
+'''
 
-    namespace(None)
+    Endpoints which return step data
 
-    flows = Metaflow().flows
-
-    result = []
-
-    for flow in list(flows):
-        
-        last_run = flow.latest_run
-
-        result.append({
-            "project": "test-project",
-            "successful": last_run.successful,
-            "finished": last_run.finished,
-            "finished_at": last_run.finished_at,
-            'run_id': int(last_run.path_components[-1]),
-            'flow': flow.pathspec
-        })
-
-    return {"data": result}
-
-def all_flows_since(timestamp=(datetime.now() - timedelta(days=1)).timestamp()):
-
-    namespace(None)
-
-    flows = Metaflow().flows
-
-    result = []
-
-    for flow in list(flows):
-        
-        for run in flow.runs():
-            print(run.created_at)
-            flow_datetime = datetime.strptime(run.created_at.split(".")[0], '%Y-%m-%dT%H:%M:%S').timestamp()
-            print(flow_datetime)
-
-            if flow_datetime > int(timestamp):
-                result.append({
-                    "successful": run.successful,
-                    "finished": run.finished,
-                    "finished_at": run.finished_at,
-                    "created_at": run.created_at,
-                    'run_id': int(run.path_components[-1]),
-                    'flow': flow.pathspec,
-                    "user": parse_tags(run.tags, "user")
-                }) 
-
-    print(result)
-    return {"data": result}
-
-def parse_tags(tags, key_string):
-    for tag in tags:
-        if key_string in tag:
-            return tag.split(":")[-1]
-    return None
+'''
 
 def get_run_data(flow=None, run_id=None):
 
@@ -133,43 +135,23 @@ def get_run_data(flow=None, run_id=None):
         raise MetaflowException(400, "Invalid parameters")
 
     namespace(None)
+    run = RunWrapper(f"{flow}/{run_id}")
 
-    run = Run(f"{flow}/{run_id}")
-    result = {
-        'flow': flow,
-        'run_id': run_id,
-        'steps': []
+    return {
+        "data": run.get_formatted_steps()
     }
 
-    for step in reversed(list(run.steps())):
-        
-        tasks = []
-
-        for task in step.tasks():
-
-            tasks.append({
-                "successful": task.successful,
-                "finished": task.finished,
-                "finished_at": task.finished_at,
-                "exception": task.exception,
-                "stdout": task.stdout
-            })
-
-
-        result['steps'].append({
-            "step": step.path_components[-1],
-            "finished_at": step.finished_at,
-            "tasks": tasks
-        })
-
-            
-    return result
 
 registered_endpoints = {
-    "/flows": route_flows,
-    "/flows/count": count_flows,
-    "/flows/{flow}/{run_id}": get_run_data,
-    "/flows/{timestamp}": all_flows_since
+    "/flows/": route_flows, # Gets all flows
+    "/flows/count": count_runs, # Count all flows
+    "/flows/{timestamp}": all_runs_since, # Returns all runs within timestamp
+    "/flows/{flow_name}/count": count_runs, # Returns count of runs for flow
+    "/flows/{flow_name}/run/{run_id}": get_run_data, # Returns specific run
+    "/flows/{flow_name}/{timestamp}": all_runs_since, # Returns runs filtered by time
+    "/flows/{flow_name}/recent": get_most_recent, # Returns runs filtered by time
+    "/flows/{flow_name}/last": get_most_recent # Returns runs filtered by time
+
 }
 
 def lambda_handler(event, context):
@@ -195,3 +177,5 @@ def lambda_handler(event, context):
         'statusCode': 200,
         'body': json.dumps(data)
     }
+
+
