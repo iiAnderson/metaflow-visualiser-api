@@ -54,7 +54,6 @@ class FlowWrapper(Flow):
         start = time.time()
 
         for r in self.runs():
-            print(r.created_at)
             yield RunWrapper("/".join(r.path_components))
         
         end = time.time()
