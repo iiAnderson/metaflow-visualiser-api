@@ -3,6 +3,7 @@ from exception import MetaflowException
 from datetime import datetime, timedelta 
 from dateutil import parser
 import pandas as pd
+import time
 import numpy as np
 import itertools
 
@@ -50,9 +51,15 @@ class FlowWrapper(Flow):
         return RunWrapper("/".join(self.latest_successful_run.path_components))
 
     def get_all_runs(self):
+        start = time.time()
+
         for r in self.runs():
             print(r.created_at)
             yield RunWrapper("/".join(r.path_components))
+        
+        end = time.time()
+
+        print(end-start)
 
     def get_most_recent_runs(self, n):
         return [ RunWrapper("/".join(r.path_components)).json() for r in itertools.islice(list(self.runs()), n)] 
