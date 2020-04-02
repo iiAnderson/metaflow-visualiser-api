@@ -2,6 +2,8 @@ from metaflow import Metaflow, Flow, get_metadata, metadata, namespace, Run, Ste
 from exception import MetaflowException
 from datetime import datetime, timedelta 
 from dateutil import parser
+import pandas as pd
+import numpy as np
 import itertools
 
 class MetaflowWrapper(Metaflow):
@@ -198,9 +200,28 @@ class DataArtifactWrapper(DataArtifact):
     def __init__(self, artifact_name=None):
         super().__init__(artifact_name)  
 
+    def _format(self, data):
+        if isinstance(data, pd.DataFrame):
+            return data.to_json()
+
+        if isinstance(data, np.ndarray):
+            return data.tolist()
+
+        return data
+
     def json(self):
-        return {
-            "data": self.data,
+        json_obj =  {
+            "data": self._format(data),
             "artifact_name": self.path_components[-1],
             "finished_at": self.finished_at
         }
+
+        try:
+            json.dumps(json_obj)
+
+            # Successfully serialised, so we know it's serialisable
+            return json_obj
+        except (TypeError, OverflowError):
+            return {
+                "data": f"There was an error when converting {self.path_components[-1]} to JSON"
+            }
