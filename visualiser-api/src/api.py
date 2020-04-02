@@ -3,6 +3,7 @@ from wrappers import RunWrapper, FlowWrapper, StepWrapper, MetaflowWrapper
 from exception import MetaflowException
 from datetime import datetime, timedelta 
 from dateutil import parser
+from statistics import mean 
 import re
 import json
 import itertools
@@ -79,7 +80,7 @@ def get_last_n(flow_name, n=5):
 
 '''
 
-    Endpoints returning count information
+    Endpoints returning statistics information
 
 '''
 
@@ -123,6 +124,51 @@ def get_week_times():
 def get_formatted_time(datetime_obj):
     return f"{datetime_obj.month}/{datetime_obj.day}"
 
+def get_datetime_from_string(time):
+    return datetime.strptime(time.split(".")[0], '%Y-%m-%dT%H:%M:%S')
+
+def run_generic_statistics(flow_name):
+
+    flow = FlowWrapper(flow_name)
+
+    last_run_id = flow.latest_run.path_components[-1]
+
+    return {
+        "data": {
+            **{"last_run_id": last_run_id, 
+            **calculate_basic_statistics(flow.get_all_runs())}
+        }
+    }
+
+def calculate_basic_statistics(runs):
+
+    times = []
+    users = []
+
+    for run in runs:
+        # Calcuate avg completion time
+        created = get_datetime_from_string(run.created_at)
+
+        if run.finished_at is None:
+            continue
+
+        finished = get_datetime_from_string(run.finished_at)
+
+        delta = finished - created
+        times.append(delta.total_seconds())
+
+        # Calculate most popular user
+        users.append(run.user)
+
+    avg_time = mean(times)
+    common_user = max(set(users), key=users.count)
+
+    return {
+        "average_execution_time": avg_time,
+        "most_common_user": common_user
+    }
+
+
 '''
 
     Endpoints which return step data
@@ -139,6 +185,24 @@ def get_run_data(flow=None, run_id=None):
 
     return {
         "data": run.get_formatted_steps()
+    }
+
+
+'''
+
+    Endpoints which return DataArtifacts
+
+'''
+
+def get_run_artifacts(flow=None, run_id=None):
+    if flow is None or run_id is None:
+        raise MetaflowException(400, "Invalid parameters")
+
+    namespace(None)
+    run = RunWrapper(f"{flow}/{run_id}")
+
+    return {
+        "data": run.get_run_output_data()
     }
 
 
@@ -177,5 +241,4 @@ def lambda_handler(event, context):
         'statusCode': 200,
         'body': json.dumps(data)
     }
-
 

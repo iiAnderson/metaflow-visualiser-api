@@ -1,4 +1,4 @@
-from metaflow import Metaflow, Flow, get_metadata, metadata, namespace, Run, Step, Task
+from metaflow import Metaflow, Flow, get_metadata, metadata, namespace, Run, Step, Task, DataArtifact
 from exception import MetaflowException
 from datetime import datetime, timedelta 
 from dateutil import parser
@@ -109,6 +109,12 @@ class RunWrapper(Run):
                 return tag.split(":")[-1]
         return None
 
+    def get_run_output_data(self):
+
+        task_wrapper = TaskWrapper(Step(self.pathspec + "/end").task.pathspec)
+
+        return task_wrapper.get_data()
+
     def json(self):
         return {
             "successful": self.successful,
@@ -117,7 +123,7 @@ class RunWrapper(Run):
             "created_at": self.created_at,
             'run_id': int(self.path_components[-1]),
             'flow': self.path_components[-2],
-            "user": self._parse_tags(self.tags, "user")
+            "user": self.user
         }
 
     def json_with_steps(self):
@@ -125,6 +131,10 @@ class RunWrapper(Run):
             **self.json(), 
             **{"steps": self.get_formatted_steps()}
         }
+    
+    @property
+    def user(self):
+        return self._parse_tags(self.tags, "user")
     
     def __str__(self):
         return self.__str__()
@@ -162,6 +172,16 @@ class TaskWrapper(Task):
     def __init__(self, task_name=None):
         super().__init__(task_name)
 
+    def get_data(self):
+        return_dataset = {}
+
+        for data in self.artifacts:
+
+            wrapper = DataArtifactWrapper(data.pathspec).json()
+            return_dataset[wrapper['artifact_name']] = wrapper
+
+        return return_dataset
+
     def json(self):
         return {
             "successful": self.successful,
@@ -173,4 +193,14 @@ class TaskWrapper(Task):
             "stderr": self.stderr
         }
 
-    
+class DataArtifactWrapper(DataArtifact):
+
+    def __init__(self, artifact_name=None):
+        super().__init__(artifact_name)  
+
+    def json(self):
+        return {
+            "data": self.data,
+            "artifact_name": self.path_components[-1],
+            "finished_at": self.finished_at
+        }

@@ -1,5 +1,5 @@
 from flask import Flask
-from api import route_flows, get_run_data, all_runs_since, count_runs, get_most_recent, get_last_n
+from api import route_flows, get_run_data, all_runs_since, count_runs, get_most_recent, get_last_n, get_run_artifacts
 
 app = Flask(__name__)
 
@@ -10,6 +10,10 @@ def hello():
 @app.route("/flows/<flow_name>/run/<run_id>")
 def run_flows(flow_name, run_id):
     return get_run_data(flow_name, run_id)
+
+@app.route("/flows/<flow_name>/run/<run_id>/artifacts")
+def run_artifacts(flow_name, run_id):
+    return get_run_artifacts(flow_name, run_id)
 
 @app.route("/flows/<flow_name>/<timestamp>")
 def timestamp_specify_flow(flow_name, timestamp):
