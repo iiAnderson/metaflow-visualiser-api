@@ -1,6 +1,6 @@
 from metaflow import Metaflow, Flow, get_metadata, metadata, namespace, Run, Step, Task, DataArtifact
 from exception import MetaflowException
-from datetime import datetime, timedelta 
+from datetime import datetime, timedelta
 from dateutil import parser
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
@@ -11,8 +11,11 @@ import boto3
 import numpy as np
 import itertools
 
-EVENTS_SOURCE_STORE = 'metaflow-events-store'      
-EVENTS_SOURCE_INDEX = 'metaflow-events-store-index' 
+# (flow_name, created_at)
+EVENTS_SOURCE_STORE = os.environ['EVENTS_SOURCE_STORE']
+# run_id index (flow_name, run_id)
+EVENTS_SOURCE_INDEX = os.environ['EVENTS_SOURCE_INDEX']
+
 
 def metadata(func):
     def wrapper(*args):
@@ -25,6 +28,7 @@ def metadata(func):
         return func(run)
 
     return wrapper
+
 
 class MetaflowWrapper():
 
@@ -48,15 +52,17 @@ class MetaflowWrapper():
     def json():
         pass
 
-    def get_count(self, count_categories, key_parser, stop_condition=lambda x:True):
+    def get_count(self, count_categories, key_parser, stop_condition=lambda x: True):
 
         for flow in self.get_flows():
-            count_categories = flow.get_count(count_categories, key_parser, stop_condition)
+            count_categories = flow.get_count(
+                count_categories, key_parser, stop_condition)
 
         return count_categories
 
+
 class FlowWrapper():
-    
+
     def __init__(self, flow_name=None):
         self._flow_name = flow_name
         dynamodb = boto3.resource('dynamodb', region_name='eu-west-1')
@@ -70,11 +76,12 @@ class FlowWrapper():
             for item in response['Items']:
                 yield RunWrapper.create_from_cache(item)
 
-
     def get_last_run(self):
 
-        kce = Key('flow_name').eq(self._flow_name) & Key('run_id').between(0, 10000) 
-        output = self._table.query(KeyConditionExpression=kce, ScanIndexForward=False, Limit = 1, IndexName=EVENTS_SOURCE_INDEX)
+        kce = Key('flow_name').eq(self._flow_name) & Key(
+            'run_id').between(0, 10000)
+        output = self._table.query(
+            KeyConditionExpression=kce, ScanIndexForward=False, Limit=1, IndexName=EVENTS_SOURCE_INDEX)
 
         if 'Items' in output:
             return RunWrapper.create_from_cache(output['Items'][0])
@@ -83,9 +90,11 @@ class FlowWrapper():
 
     def get_last_successful_run(self):
 
-        kce = Key('flow_name').eq(self._flow_name) & Key('run_id').between(0, 10000)
+        kce = Key('flow_name').eq(self._flow_name) & Key(
+            'run_id').between(0, 10000)
         fe = Key('success').eq(True)
-        output = self._table.query(KeyConditionExpression=kce, FilterExpression=fe, ScanIndexForward=False, Limit = 1, IndexName=EVENTS_SOURCE_INDEX)
+        output = self._table.query(KeyConditionExpression=kce, FilterExpression=fe,
+                                   ScanIndexForward=False, Limit=1, IndexName=EVENTS_SOURCE_INDEX)
 
         if 'Items' in output:
             return RunWrapper.create_from_cache(output['Items'][0])
@@ -93,9 +102,11 @@ class FlowWrapper():
         return {}
 
     def get_most_recent_runs(self, n):
-        
-        kce = Key('flow_name').eq(self._flow_name) & Key('run_id').between(0, 10000) 
-        output = self._table.query(KeyConditionExpression=kce, ScanIndexForward=False, Limit = n, IndexName=EVENTS_SOURCE_INDEX)
+
+        kce = Key('flow_name').eq(self._flow_name) & Key(
+            'run_id').between(0, 10000)
+        output = self._table.query(
+            KeyConditionExpression=kce, ScanIndexForward=False, Limit=n, IndexName=EVENTS_SOURCE_INDEX)
 
         runs = []
 
@@ -120,22 +131,23 @@ class FlowWrapper():
         return runs
 
     def get_count(self, count_categories, key_parser, stop_condition):
-        
+
         for run in self.get_all_runs():
             key_formatted = key_parser(run)
-            
+
             if stop_condition(run):
                 break
 
             if key_formatted in count_categories:
                 count_categories[key_formatted] = count_categories[key_formatted] + 1
-        
+
         return count_categories
 
     def json(self):
         return {
             "flow_name": self._flow_name
         }
+
 
 class RunWrapper():
 
@@ -145,7 +157,8 @@ class RunWrapper():
         _table = dynamodb.Table('metaflow-events-store')
 
         kce = Key('flow_name').eq(flow_name) & Key('run_id').eq(int(run_id))
-        output = _table.query(KeyConditionExpression=kce, ScanIndexForward=False, Limit = 1, IndexName=EVENTS_SOURCE_INDEX)
+        output = _table.query(KeyConditionExpression=kce,
+                              ScanIndexForward=False, Limit=1, IndexName=EVENTS_SOURCE_INDEX)
 
         if 'Items' in output:
             return RunWrapper.create_from_cache(output['Items'][0])
@@ -169,7 +182,6 @@ class RunWrapper():
         run.flow_name = item['flow_name']
 
         return run
-
 
     @staticmethod
     def create_from_metadata(metadata):
@@ -235,15 +247,12 @@ class RunWrapper():
 
     def json_with_steps(self):
         return {
-            **self.json(), 
+            **self.json(),
             **{"steps": self.get_formatted_steps()}
         }
 
 
 class StepWrapper(Step):
-
-    # def __init__(self, flow_name=None, run_id=None, step_name=None):
-    #     self._step = Step(f"{flow_name}/{run_id}/{step_name}")
 
     def __init__(self, step_name=None):
         super().__init__(step_name)
@@ -263,10 +272,13 @@ class StepWrapper(Step):
     def get_formatted_tasks(self):
         results = []
 
-        for s in self.tasks():
-            results.append(TaskWrapper("/".join(s.path_components)).json())
 
-        return results
+   
+   for s in self.tasks():
+        results.append(TaskWrapper("/".join(s.path_components)).json())
+
+    return results
+
 
 class TaskWrapper(Task):
 
@@ -294,10 +306,11 @@ class TaskWrapper(Task):
             "stderr": self.stderr
         }
 
+
 class DataArtifactWrapper(DataArtifact):
 
     def __init__(self, artifact_name=None):
-        super().__init__(artifact_name)  
+        super().__init__(artifact_name)
 
     def _format(self, data):
         if isinstance(data, pd.DataFrame):
@@ -309,7 +322,7 @@ class DataArtifactWrapper(DataArtifact):
         return data
 
     def json(self):
-        json_obj =  {
+        json_obj = {
             "data": self._format(self.data),
             "artifact_name": self.path_components[-1],
             "finished_at": self.finished_at

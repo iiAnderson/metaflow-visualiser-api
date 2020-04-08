@@ -49,19 +49,6 @@ def all_runs_since(flow_name=None,timestamp=(datetime.now() - timedelta(days=1))
 
     return { "data": sorted(runs, key = lambda r: (r['created_at']), reverse=True) }
 
-    # namespace(None)
-
-    # if flow_name is None:
-    #     flows = MetaflowWrapper().get_flows()
-    # else:
-    #     flows = [FlowWrapper(flow_name=flow_name)]
-
-    # return_runs = []
-
-    # for flow in flows:
-    #     return_runs.extend(flow.get_runs(timestamp=timestamp))
-
-    # return {"data": sorted(return_runs, key = lambda r: (r['created_at']))}
 
 def get_most_recent(flow_name):
     namespace(None)

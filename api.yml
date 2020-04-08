@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Stack for deployment of Dashboard API
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+
+  DashboardLambdaPath:
+    Type: String
+  MetaflowBucketArn:
+    Type: String
+  ArtifactBucket:
+    Type: String
+  MetaflowEventStore:
+    Type: String
+ MetaflowEventStoreIndex:
+    Type: String
+Resources:
+
+  ServerlessRestApi:
+    Type: AWS::Serverless::Api
+    DeletionPolicy: "Retain"
+
+  ApiKey:
+    Type: 'AWS::ApiGateway::ApiKey'
+    Properties:
+      Name: !Join ['-', [!Ref 'AWS::StackName', ApiKey] ]
+      Enabled: 'true'
+
+  ApiUsagePlan:
+    Type: "AWS::ApiGateway::UsagePlan"
+    Properties:
+      ApiStages: 
+      - ApiId: !Ref ServerlessRestApi
+        Stage: Prod
+      UsagePlanName: !Join ["", [!Ref AWS::StackName, "-usage-plan"]]
+    DependsOn: 
+      - ServerlessRestApi
+
+  ApiUsagePlanKey:
+    Type: "AWS::ApiGateway::UsagePlanKey"
+    Properties:
+      KeyId: !Ref ApiKey
+      UsagePlanId: !Ref ApiUsagePlan
+      KeyType: API_KEY
+    DependsOn: 
+        - ServerlessRestApi
+
+  DashboardLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+              AWS: !Ref AWS::AccountId
+            Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: CloudwatchLogging
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:GetLogEvents
+                  - logs:PutLogEvents
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+        - PolicyName: MetaflowBucketAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:Get*
+                Resource: 
+                    - !Sub
+                        - ${MetaflowBucketArn}/* 
+                        - { BucketName: !Ref MetaflowBucketArn }
+                    - !Ref MetaflowBucketArn
+        - PolicyName: XrayPutTracePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "xray:PutTraceSegments"
+                  - "xray:PutTelemetryRecords"
+                Resource: "*"
+
+  DashboardApiLambda:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.6
+      Timeout: 20
+      CodeUri:
+        Bucket: !Ref ArtifactBucket
+        Key: !Ref DashboardLambdaPath
+      FunctionName: !Sub ${AWS::StackName}-server
+      Role: !GetAtt DashboardLambdaRole.Arn
+      Tracing: Active
+      Environment:
+        Variables:
+          EVENTS_SOURCE_STORE: !Ref MetaflowEventStore
+          EVENTS_SOURCE_INDEX: !Ref MetaflowEventStoreIndex
+          METAFLOW_HOME: 'config/'
+      Events:
+        ModelProcessorAPI:
+          Type: Api
+          Properties:
+            Path: /api
+            Method: get
+            Auth:
+              ApiKeyRequired: true
+            RestApiId:
+              Ref: ServerlessRestApi  
+
