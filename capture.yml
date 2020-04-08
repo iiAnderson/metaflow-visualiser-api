@@ -1,0 +1,155 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Stack for complete deployment of Metaflow infrastructure
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+
+  MetaflowBucket: 
+    Type: String
+  MetaflowEventProcessorPath:
+    Type: String
+  CustomResourceLambdaPath:
+    Type: String
+
+Resources:
+
+  MetaflowEvents:
+    Properties:
+      TableName: !Sub ${AWS::StackName}-store
+      StreamSpecification:
+          StreamViewType: OLD_IMAGE
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: flow_name
+        AttributeType: S
+      - AttributeName: created_at
+        AttributeType: N
+      - AttributeName: run_id
+        AttributeType: N
+      KeySchema:
+      - AttributeName: flow_name
+        KeyType: HASH 
+      - AttributeName: created_at
+        KeyType: RANGE 
+      LocalSecondaryIndexes:
+        - IndexName: !Sub ${AWS::StackName}-store-index
+          KeySchema:
+          - AttributeName: flow_name
+            KeyType: HASH
+          - AttributeName: run_id
+            KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+    Type: 'AWS::DynamoDB::Table'
+
+  MetaflowEventsProcessorRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: 'arn:aws:logs:*:*:*'
+        - PolicyName: DynamoDB
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:PutItem'
+                Resource: !GetAtt MetaflowEvents.Arn
+
+  MetaflowEventProcessor:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: 'code-artefacts'
+        S3Key: !Ref MetaflowEventProcessorPath
+      Handler: handler.lambda_handler
+      Role: !GetAtt MetaflowEventsProcessorRole.Arn
+      Runtime: python3.6
+      Timeout: 50
+      Environment:
+        Variables:
+          EVENTS_RECORD_STORE: !Ref MetaflowEvents
+
+  LambdaInvokePermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName: !GetAtt MetaflowEventProcessor.Arn
+      Action: 'lambda:InvokeFunction'
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref 'AWS::AccountId'
+      SourceArn: !Sub 'arn:aws:s3:::${MetaflowBucket}'
+
+  LambdaIAMRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: 'arn:aws:logs:*:*:*'
+
+  CustomResourceLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: !Sub 'handler.lambda_handler'
+      Role: !GetAtt LambdaIAMRole.Arn
+      Code:
+        S3Bucket: 'code-artefacts'
+        S3Key: !Ref CustomResourceLambdaPath
+      Runtime: python3.6
+      Timeout: 50
+
+  LambdaTrigger:
+    Type: 'Custom::RouteTableLambda'
+    DependsOn: LambdaInvokePermission
+    Properties:
+      ServiceToken: !GetAtt CustomResourceLambdaFunction.Arn
+      LambdaArn: !GetAtt MetaflowEventProcessor.Arn
+      Bucket: !Ref MetaflowBucket

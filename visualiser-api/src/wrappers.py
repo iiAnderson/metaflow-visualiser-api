@@ -2,19 +2,39 @@ from metaflow import Metaflow, Flow, get_metadata, metadata, namespace, Run, Ste
 from exception import MetaflowException
 from datetime import datetime, timedelta 
 from dateutil import parser
+import boto3
+from boto3.dynamodb.conditions import Key, Attr
 import pandas as pd
 import time
+import json
+import boto3
 import numpy as np
 import itertools
 
-class MetaflowWrapper(Metaflow):
+EVENTS_SOURCE_STORE = 'metaflow-events-store'      
+EVENTS_SOURCE_INDEX = 'metaflow-events-store-index' 
+
+def metadata(func):
+    def wrapper(*args):
+        run = args[0]
+
+        if run.cache:
+            run._run = Run(run.pathspec)
+            run.cache = False
+
+        return func(run)
+
+    return wrapper
+
+class MetaflowWrapper():
 
     def __init__(self):
         super().__init__()
+        self._metaflow = Metaflow()
 
     def get_flows(self):
-        for f in self.flows:
-            yield FlowWrapper(flow_name="".join(f.path_components))     
+        for f in self._metaflow.flows:
+            yield FlowWrapper(flow_name=f.path_components[-1])
 
     def get_formatted_flows(self):
 
@@ -35,46 +55,68 @@ class MetaflowWrapper(Metaflow):
 
         return count_categories
 
-
-class FlowWrapper(Flow):
-
+class FlowWrapper():
+    
     def __init__(self, flow_name=None):
-        super().__init__(flow_name)
-
-    def json(self):
-        return {}
-
-    def get_last_run(self):
-        return RunWrapper("/".join(self.latest_run.path_components))
-
-    def get_last_successful_run(self):
-        return RunWrapper("/".join(self.latest_successful_run.path_components))
+        self._flow_name = flow_name
+        dynamodb = boto3.resource('dynamodb', region_name='eu-west-1')
+        self._table = dynamodb.Table('metaflow-events-store')
 
     def get_all_runs(self):
-        start = time.time()
 
-        for r in self.runs():
-            yield RunWrapper("/".join(r.path_components))
-        
-        end = time.time()
+        response = self._table.scan()
 
-        print(end-start)
+        if 'Items' in response:
+            for item in response['Items']:
+                yield RunWrapper.create_from_cache(item)
+
+
+    def get_last_run(self):
+
+        kce = Key('flow_name').eq(self._flow_name) & Key('run_id').between(0, 10000) 
+        output = self._table.query(KeyConditionExpression=kce, ScanIndexForward=False, Limit = 1, IndexName=EVENTS_SOURCE_INDEX)
+
+        if 'Items' in output:
+            return RunWrapper.create_from_cache(output['Items'][0])
+
+        return {}
+
+    def get_last_successful_run(self):
+
+        kce = Key('flow_name').eq(self._flow_name) & Key('run_id').between(0, 10000)
+        fe = Key('success').eq(True)
+        output = self._table.query(KeyConditionExpression=kce, FilterExpression=fe, ScanIndexForward=False, Limit = 1, IndexName=EVENTS_SOURCE_INDEX)
+
+        if 'Items' in output:
+            return RunWrapper.create_from_cache(output['Items'][0])
+
+        return {}
 
     def get_most_recent_runs(self, n):
-        return [ RunWrapper("/".join(r.path_components)).json() for r in itertools.islice(list(self.runs()), n)] 
+        
+        kce = Key('flow_name').eq(self._flow_name) & Key('run_id').between(0, 10000) 
+        output = self._table.query(KeyConditionExpression=kce, ScanIndexForward=False, Limit = n, IndexName=EVENTS_SOURCE_INDEX)
+
+        runs = []
+
+        if 'Items' in output:
+            for run in output['Items']:
+                runs.append(RunWrapper.create_from_cache(run).json())
+
+        return runs
 
     def get_runs(self, timestamp=(datetime.now() - timedelta(days=1)).timestamp()):
 
         runs = []
 
         for r in self.get_all_runs():
-            run_date = datetime.strptime(r.created_at.split(".")[0], '%Y-%m-%dT%H:%M:%S').timestamp()
+            run_date = r.created_at
 
             if run_date > int(timestamp):
                 runs.append(r.json())
             else:
                 break
-        
+        print(runs)
         return runs
 
     def get_count(self, count_categories, key_parser, stop_condition):
@@ -90,62 +132,113 @@ class FlowWrapper(Flow):
         
         return count_categories
 
+    def json(self):
+        return {
+            "flow_name": self._flow_name
+        }
 
-class RunWrapper(Run):
+class RunWrapper():
 
-    def __init__(self, run_name=None):
-        super().__init__(run_name)
+    @staticmethod
+    def create_from_lookup(flow_name, run_id):
+        dynamodb = boto3.resource('dynamodb', region_name='eu-west-1')
+        _table = dynamodb.Table('metaflow-events-store')
+
+        kce = Key('flow_name').eq(flow_name) & Key('run_id').eq(int(run_id))
+        output = _table.query(KeyConditionExpression=kce, ScanIndexForward=False, Limit = 1, IndexName=EVENTS_SOURCE_INDEX)
+
+        if 'Items' in output:
+            return RunWrapper.create_from_cache(output['Items'][0])
+
+        raise Exception("Not found")
+
+    @staticmethod
+    def create_from_cache(item):
+
+        run = RunWrapper()
+        run.cache = True
+
+        run.created_at = int(item['created_at'])
+        run.finished_at = int(item['finished_at'])
+        run.successful = item['success']
+        run.finished = item['finished']
+        run.user = item['user']
+        run.current_step = item['current_step']
+        run.tags = item['tags']
+        run.run_id = int(item['run_id'])
+        run.flow_name = item['flow_name']
+
+        return run
+
+
+    @staticmethod
+    def create_from_metadata(metadata):
+
+        run = RunWrapper()
+        run.cache = False
+        run._run = metadata
+
+        return run
 
     def is_before(self, unix_timestamp):
         return self.created_at < unix_timestamp
 
+    @metadata
     def get_steps(self):
-        for s in self.steps():
-            yield StepWrapper(step_name="/".join(s.path_components))
 
+        for s in self._run.steps():
+            yield StepWrapper(step_name=s.pathspec)
+
+    @metadata
     def get_formatted_steps(self):
         results = []
 
-        for s in self.steps():
-            results.append(StepWrapper("/".join(s.path_components)).json())
+        for s in self._run.steps():
+            results.append(StepWrapper(s.pathspec).json())
 
         return results
 
+    @metadata
     def _parse_tags(self, tags, key_string):
         for tag in tags:
             if key_string in tag:
                 return tag.split(":")[-1]
         return None
 
+    @metadata
     def get_run_output_data(self):
 
-        task_wrapper = TaskWrapper(Step(self.pathspec + "/end").task.pathspec)
+        task_wrapper = TaskWrapper(self._run.end_task.pathspec)
 
         return task_wrapper.get_data()
 
     def json(self):
         return {
-            "successful": self.successful,
+            "success": self.successful,
             "finished": self.finished,
-            "finished_at": self.finished_at,
-            "created_at": self.created_at,
-            'run_id': int(self.path_components[-1]),
-            'flow': self.path_components[-2],
+            "finished_at": int(self.finished_at),
+            "created_at": int(self.created_at),
+            'run_id': int(self.get_run_id()),
+            'flow': self.get_flow_name(),
             "user": self.user
         }
+
+    @property
+    def pathspec(self):
+        return f"{self.get_flow_name()}/{self.get_run_id()}" if self.cache else self._run.pathspec
+
+    def get_run_id(self):
+        return self.run_id if self.cache else int(self.path_components[-1])
+
+    def get_flow_name(self):
+        return self.flow_name if self.cache else int(self.path_components[-2])
 
     def json_with_steps(self):
         return {
             **self.json(), 
             **{"steps": self.get_formatted_steps()}
         }
-    
-    @property
-    def user(self):
-        return self._parse_tags(self.tags, "user")
-    
-    def __str__(self):
-        return self.__str__()
+
 
 class StepWrapper(Step):
 
@@ -217,7 +310,7 @@ class DataArtifactWrapper(DataArtifact):
 
     def json(self):
         json_obj =  {
-            "data": self._format(data),
+            "data": self._format(self.data),
             "artifact_name": self.path_components[-1],
             "finished_at": self.finished_at
         }

@@ -3,8 +3,10 @@ from wrappers import RunWrapper, FlowWrapper, StepWrapper, MetaflowWrapper
 from exception import MetaflowException
 from datetime import datetime, timedelta 
 from dateutil import parser
-from statistics import mean 
+from statistics import mean
+from boto3.dynamodb.conditions import Key, Attr
 import re
+import boto3
 import json
 import itertools
 
@@ -42,20 +44,24 @@ def route_flows():
     return {"data": result}
 
 def all_runs_since(flow_name=None,timestamp=(datetime.now() - timedelta(days=1)).timestamp()):
-    
-    namespace(None)
 
-    if flow_name is None:
-        flows = MetaflowWrapper().get_flows()
-    else:
-        flows = [FlowWrapper(flow_name=flow_name)]
+    runs = FlowWrapper(flow_name=flow_name).get_runs(timestamp=timestamp)
 
-    return_runs = []
+    return { "data": sorted(runs, key = lambda r: (r['created_at']), reverse=True) }
 
-    for flow in flows:
-        return_runs.extend(flow.get_runs(timestamp=timestamp))
+    # namespace(None)
 
-    return {"data": sorted(return_runs, key = lambda r: (r['created_at']))}
+    # if flow_name is None:
+    #     flows = MetaflowWrapper().get_flows()
+    # else:
+    #     flows = [FlowWrapper(flow_name=flow_name)]
+
+    # return_runs = []
+
+    # for flow in flows:
+    #     return_runs.extend(flow.get_runs(timestamp=timestamp))
+
+    # return {"data": sorted(return_runs, key = lambda r: (r['created_at']))}
 
 def get_most_recent(flow_name):
     namespace(None)
@@ -90,11 +96,11 @@ def count_runs(flow_name=None):
     count_categories = get_week_times()
 
     def key_parser(run):
-        return get_formatted_time(datetime.strptime(run.created_at.split(".")[0], '%Y-%m-%dT%H:%M:%S'))
+        return get_formatted_time(datetime.fromtimestamp(run.created_at))
 
     def stop_condition(run):
         a_week_ago = (datetime.now() - timedelta(days=7))
-        flow_datetime = datetime.strptime(run.created_at.split(".")[0], '%Y-%m-%dT%H:%M:%S')
+        flow_datetime = datetime.fromtimestamp(run.created_at)
 
         return flow_datetime.timestamp() < a_week_ago.timestamp()
 
@@ -108,7 +114,7 @@ def count_runs(flow_name=None):
     for key, value in return_counts.items():
         return_data.append({"time": key, "count": value})
 
-    return {"data": return_data} 
+    return { "data": return_data } 
 
 def get_week_times():
     now = datetime.now()
@@ -199,7 +205,7 @@ def get_run_artifacts(flow=None, run_id=None):
         raise MetaflowException(400, "Invalid parameters")
 
     namespace(None)
-    run = RunWrapper(f"{flow}/{run_id}")
+    run = RunWrapper.create_from_lookup(flow, run_id)
 
     return {
         "data": run.get_run_output_data()
