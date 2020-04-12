@@ -4,11 +4,12 @@ from datetime import datetime, timedelta
 from dateutil import parser
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
-import pandas as pd
+# import pandas as pd
 import time
 import json
 import boto3
-import numpy as np
+import os
+# import numpy as np
 import itertools
 
 # (flow_name, created_at)
@@ -270,14 +271,12 @@ class StepWrapper(Step):
             yield TaskWrapper("/".join(s.path_components))
 
     def get_formatted_tasks(self):
+
         results = []
+        for s in self.tasks():
+            results.append(TaskWrapper("/".join(s.path_components)).json())
 
-
-   
-   for s in self.tasks():
-        results.append(TaskWrapper("/".join(s.path_components)).json())
-
-    return results
+        return results
 
 
 class TaskWrapper(Task):
@@ -313,11 +312,11 @@ class DataArtifactWrapper(DataArtifact):
         super().__init__(artifact_name)
 
     def _format(self, data):
-        if isinstance(data, pd.DataFrame):
-            return data.to_json()
+        # if isinstance(data, pd.DataFrame):
+        #     return data.to_json()
 
-        if isinstance(data, np.ndarray):
-            return data.tolist()
+        # if isinstance(data, np.ndarray):
+        #     return data.tolist()
 
         return data
 

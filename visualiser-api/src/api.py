@@ -12,8 +12,8 @@ import itertools
 
 def get_request_info(event):
 
-    route = event['routeKey'].split(" ")[-1]
-    values = event['rawPath'].split(" ")[-1].split('/')
+    route = event['resource']
+    values = event['path'].split('/')
 
     parameters = {}
 
@@ -24,9 +24,10 @@ def get_request_info(event):
     
     return {
         "route": route,
-        "operation": event['routeKey'].split(" ")[0],
+        "operation": event['path'].split(" ")[0],
         "parameters": parameters
     }
+
 
 '''
 
@@ -200,19 +201,20 @@ def get_run_artifacts(flow=None, run_id=None):
 
 
 registered_endpoints = {
-    "/flows/": route_flows, # Gets all flows
+    "/flows": route_flows, # Gets all flows
     "/flows/count": count_runs, # Count all flows
-    "/flows/{timestamp}": all_runs_since, # Returns all runs within timestamp
+    "/flows/all/{timestamp}": all_runs_since, # Returns all runs within timestamp
     "/flows/{flow_name}/count": count_runs, # Returns count of runs for flow
     "/flows/{flow_name}/run/{run_id}": get_run_data, # Returns specific run
     "/flows/{flow_name}/{timestamp}": all_runs_since, # Returns runs filtered by time
     "/flows/{flow_name}/recent": get_most_recent, # Returns runs filtered by time
-    "/flows/{flow_name}/last": get_most_recent # Returns runs filtered by time
-
+    "/flows/{flow_name}/last": get_last_n, # Returns runs filtered by time
+    "/flows/{flow_name}/run/{run_id}/artifacts": get_run_artifacts
 }
 
-def lambda_handler(event, context):
+def handle_request(event, context):
 
+    print(event)
     info = get_request_info(event)
 
     try:
@@ -224,7 +226,7 @@ def lambda_handler(event, context):
             'body': json.dumps(message)
         }
     except Exception as e:
-        print(e)
+        raise e
         return {
             'statusCode': 500,
             'body': json.dumps("Server Error")
