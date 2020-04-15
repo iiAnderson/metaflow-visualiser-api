@@ -205,10 +205,10 @@ class RunWrapper():
     @metadata
     def get_formatted_steps(self):
         results = []
-
+        st = time.time()
         for s in self._run.steps():
-            results.append(StepWrapper(s.pathspec).json())
-
+            results.append(StepWrapper(s.pathspec).json_without_tasks())
+        e = time.time()
         return results
 
     @metadata
@@ -257,6 +257,14 @@ class StepWrapper(Step):
 
     def __init__(self, step_name=None):
         super().__init__(step_name)
+
+    def json_without_tasks(self):
+        return {
+            "step": self.path_components[-1],
+            "finished_at": self.finished_at,
+            "created_at": self.created_at
+            # "tasks": self.get_formatted_tasks()
+        }
 
     def json(self):
         return {

@@ -4,3 +4,5 @@ __pycache__
 **/__pycache__
 **/config.json
 visualiser-api/src/config/config.json
+dist/
+.DS_Store

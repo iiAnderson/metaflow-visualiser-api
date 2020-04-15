@@ -1,6 +1,7 @@
 import requests
 import os
 import json
+import time
 from exception import MetaflowException
 
 CREDENTIALS_API_URL = os.environ['CREDENTIALS_API_URL']
@@ -24,10 +25,11 @@ def lambda_handler(event, context):
         import api
 
         return api.handle_request(event, context)
-    
+
     else:
         print("Unable to locate credentials")
         return {
             'statusCode': 403,
             'body': json.dumps("Could not obtain Metaflow credentials")
         }
+

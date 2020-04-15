@@ -12,38 +12,380 @@ Parameters:
     Type: String
   MetaflowEventStore:
     Type: String
- MetaflowEventStoreIndex:
+  MetaflowEventStoreIndex:
     Type: String
+  MetaflowCredentialsAutomatorUrl:
+    Type: String
+  MetaflowApiKey:
+    Type: String
+  MetaflowApiKeyReference:
+    Type: String
+
 Resources:
 
-  ServerlessRestApi:
-    Type: AWS::Serverless::Api
-    DeletionPolicy: "Retain"
-
-  ApiKey:
-    Type: 'AWS::ApiGateway::ApiKey'
+  Api:
+    Type: "AWS::ApiGateway::RestApi"
     Properties:
-      Name: !Join ['-', [!Ref 'AWS::StackName', ApiKey] ]
-      Enabled: 'true'
+      Name: !Sub ${AWS::StackName}-api
+      Description: "Metaflow Dashboard API"
+
+  ApiGatewayBaseFlowsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt Api.RootResourceId
+      PathPart: 'flows'
+      RestApiId: !Ref Api
+
+  OptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      RestApiId:
+        Ref: Api
+      ResourceId:
+        Ref: ApiGatewayBaseFlowsResource
+      HttpMethod: OPTIONS
+      Integration:
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+          ResponseTemplates:
+            application/json: ''
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        Type: MOCK
+      MethodResponses:
+      - StatusCode: 200
+        ResponseModels:
+          application/json: 'Empty'
+        ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
+            method.response.header.Access-Control-Allow-Origin: false
+
+  ApiRouteFlowsMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      AuthorizationType: "NONE"
+      ApiKeyRequired: true
+      HttpMethod: "GET"
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Credentials: !GetAtt ApiGatewayIamRole.Arn
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations"
+          - lambdaArn: !GetAtt "DashboardApiLambda.Arn"
+      ResourceId: !Ref ApiGatewayBaseFlowsResource
+      RestApiId: !Ref "Api"
+
+
+  ApiGatewayCountResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayBaseFlowsResource
+      PathPart: 'count'
+      RestApiId: !Ref Api
+
+  ApiRouteCountMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      AuthorizationType: "NONE"
+      ApiKeyRequired: true
+      HttpMethod: "GET"
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Credentials: !GetAtt ApiGatewayIamRole.Arn
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations"
+          - lambdaArn: !GetAtt "DashboardApiLambda.Arn"
+      ResourceId: !Ref ApiGatewayCountResource
+      RestApiId: !Ref "Api"
+
+
+  ApiGatewayFlowAllResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayBaseFlowsResource
+      PathPart: 'all'
+      RestApiId: !Ref Api
+
+  ApiGatewayFlowTimestampResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayFlowAllResource
+      PathPart: '{timestamp}'
+      RestApiId: !Ref Api
+
+  ApiRoutFlowTimestampeMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      AuthorizationType: "NONE"
+      ApiKeyRequired: true
+      HttpMethod: "GET"
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Credentials: !GetAtt ApiGatewayIamRole.Arn
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations"
+          - lambdaArn: !GetAtt "DashboardApiLambda.Arn"
+      ResourceId: !Ref ApiGatewayFlowTimestampResource
+      RestApiId: !Ref "Api"
+
+
+  ApiGatewayFlowNameResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayBaseFlowsResource
+      PathPart: '{flow_name}'
+      RestApiId: !Ref Api
+
+
+  ApiGatewayFlowCountResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayFlowNameResource
+      PathPart: 'count'
+      RestApiId: !Ref Api
+
+  ApiRouteFlowCountMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      AuthorizationType: "NONE"
+      ApiKeyRequired: true
+      HttpMethod: "GET"
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Credentials: !GetAtt ApiGatewayIamRole.Arn
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations"
+          - lambdaArn: !GetAtt "DashboardApiLambda.Arn"
+      ResourceId: !Ref ApiGatewayFlowCountResource
+      RestApiId: !Ref "Api"
+
+
+  ApiGatewayRunSinceResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayFlowNameResource
+      PathPart: '{timestamp}'
+      RestApiId: !Ref Api
+
+  ApiRouteRunSinceMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      AuthorizationType: "NONE"
+      ApiKeyRequired: true
+      HttpMethod: "GET"
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Credentials: !GetAtt ApiGatewayIamRole.Arn
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations"
+          - lambdaArn: !GetAtt "DashboardApiLambda.Arn"
+      ResourceId: !Ref ApiGatewayRunSinceResource
+      RestApiId: !Ref "Api"
+
+
+  ApiGatewayRecentResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayFlowNameResource
+      PathPart: 'recent'
+      RestApiId: !Ref Api
+
+  ApiRouteRecentMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      AuthorizationType: "NONE"
+      ApiKeyRequired: true
+      HttpMethod: "GET"
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Credentials: !GetAtt ApiGatewayIamRole.Arn
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations"
+          - lambdaArn: !GetAtt "DashboardApiLambda.Arn"
+      ResourceId: !Ref ApiGatewayRecentResource
+      RestApiId: !Ref "Api"
+
+
+  ApiGatewayLastRunResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayFlowNameResource
+      PathPart: 'last'
+      RestApiId: !Ref Api
+
+  ApiRouteLastRunMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      AuthorizationType: "NONE"
+      ApiKeyRequired: true
+      HttpMethod: "GET"
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Credentials: !GetAtt ApiGatewayIamRole.Arn
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations"
+          - lambdaArn: !GetAtt "DashboardApiLambda.Arn"
+      ResourceId: !Ref ApiGatewayLastRunResource
+      RestApiId: !Ref "Api"
+
+
+  ApiGatewayFlowRunResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayFlowNameResource
+      PathPart: 'runs'
+      RestApiId: !Ref Api
+
+
+  ApiGatewayFlowRunDataResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayFlowRunResource
+      PathPart: '{run_id}'
+      RestApiId: !Ref Api
+
+  ApiRouteFlowRunMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      AuthorizationType: "NONE"
+      ApiKeyRequired: true
+      HttpMethod: "GET"
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Credentials: !GetAtt ApiGatewayIamRole.Arn
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations"
+          - lambdaArn: !GetAtt "DashboardApiLambda.Arn"
+      ResourceId: !Ref ApiGatewayFlowRunDataResource
+      RestApiId: !Ref "Api"
+
+
+  ApiGatewayRunArtifactsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayFlowRunDataResource
+      PathPart: 'artifacts'
+      RestApiId: !Ref Api
+
+  ApiRouteRunArtifactsMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      AuthorizationType: "NONE"
+      ApiKeyRequired: true
+      HttpMethod: "GET"
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Credentials: !GetAtt ApiGatewayIamRole.Arn
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations"
+          - lambdaArn: !GetAtt "DashboardApiLambda.Arn"
+      ResourceId: !Ref ApiGatewayRunArtifactsResource
+      RestApiId: !Ref "Api"
+
+
+  ApiGatewayIamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+            Effect: 'Allow'
+            Principal:
+              Service:
+                - 'apigateway.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Path: '/'
+      Policies:
+        - PolicyName: LambdaAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action: 'lambda:*'
+                Resource: !GetAtt DashboardApiLambda.Arn
+
+  ApiDeployment:
+    Type: "AWS::ApiGateway::Deployment"
+    DependsOn:
+      - "ApiRouteRunArtifactsMethod"
+      - ApiRouteLastRunMethod
+      - ApiRouteRecentMethod
+      - ApiRouteRunSinceMethod
+      - ApiRouteFlowRunMethod
+      - ApiRouteFlowCountMethod
+      - ApiRoutFlowTimestampeMethod
+      - ApiRouteCountMethod
+      - ApiRouteFlowsMethod
+    Properties:
+      RestApiId: !Ref "Api"
+      StageName: "api"
 
   ApiUsagePlan:
     Type: "AWS::ApiGateway::UsagePlan"
+    DependsOn:
+      - Api
+      - ApiDeployment
     Properties:
       ApiStages: 
-      - ApiId: !Ref ServerlessRestApi
-        Stage: Prod
-      UsagePlanName: !Join ["", [!Ref AWS::StackName, "-usage-plan"]]
-    DependsOn: 
-      - ServerlessRestApi
+      - ApiId: !Ref Api
+        Stage: api
+      UsagePlanName: !Join ["", [{"Ref": "AWS::StackName"}, "-usage-plan"]]
 
   ApiUsagePlanKey:
     Type: "AWS::ApiGateway::UsagePlanKey"
+    DependsOn:
+      - Api
+      - ApiDeployment
     Properties:
-      KeyId: !Ref ApiKey
-      UsagePlanId: !Ref ApiUsagePlan
+      KeyId: !Ref MetaflowApiKeyReference
       KeyType: API_KEY
-    DependsOn: 
-        - ServerlessRestApi
+      UsagePlanId: !Ref ApiUsagePlan
+
+  DashboardApiLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: credentials_wrapper.lambda_handler
+      Runtime: python3.6
+      Timeout: 20
+      Code:
+        S3Bucket: !Ref ArtifactBucket
+        S3Key: !Ref DashboardLambdaPath
+      FunctionName: !Sub ${AWS::StackName}-server
+      Role: !GetAtt DashboardLambdaRole.Arn
+      TracingConfig: 
+        Mode: Active
+      Environment:
+        Variables:
+          EVENTS_SOURCE_STORE: !Ref MetaflowEventStore
+          EVENTS_SOURCE_INDEX: !Ref MetaflowEventStoreIndex
+          CREDENTIALS_API_URL: !Ref MetaflowCredentialsAutomatorUrl
+          API_KEY: !Ref MetaflowApiKey
+          METAFLOW_HOME: '/tmp/' 
+
+  ApiGatewayLambdaInvoke:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !GetAtt "DashboardApiLambda.Arn"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${Api}/*/GET/"
 
   DashboardLambdaRole:
     Type: AWS::IAM::Role
@@ -58,6 +400,17 @@ Resources:
             Action: sts:AssumeRole
       Path: "/"
       Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource: 
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${MetaflowEventStore}"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${MetaflowEventStore}/*"
         - PolicyName: CloudwatchLogging
           PolicyDocument:
             Version: 2012-10-17
@@ -91,31 +444,7 @@ Resources:
                   - "xray:PutTelemetryRecords"
                 Resource: "*"
 
-  DashboardApiLambda:
-    Type: 'AWS::Serverless::Function'
-    Properties:
-      Handler: lambda_function.lambda_handler
-      Runtime: python3.6
-      Timeout: 20
-      CodeUri:
-        Bucket: !Ref ArtifactBucket
-        Key: !Ref DashboardLambdaPath
-      FunctionName: !Sub ${AWS::StackName}-server
-      Role: !GetAtt DashboardLambdaRole.Arn
-      Tracing: Active
-      Environment:
-        Variables:
-          EVENTS_SOURCE_STORE: !Ref MetaflowEventStore
-          EVENTS_SOURCE_INDEX: !Ref MetaflowEventStoreIndex
-          METAFLOW_HOME: 'config/'
-      Events:
-        ModelProcessorAPI:
-          Type: Api
-          Properties:
-            Path: /api
-            Method: get
-            Auth:
-              ApiKeyRequired: true
-            RestApiId:
-              Ref: ServerlessRestApi  
 
+Outputs:
+  ApiUrl:
+    Value: !Sub "https://${Api}.execute-api.${AWS::Region}.amazonaws.com/api"
