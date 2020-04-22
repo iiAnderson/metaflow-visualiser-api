@@ -29,43 +29,51 @@ Resources:
       Name: !Sub ${AWS::StackName}-api
       Description: "Metaflow Dashboard API"
 
+
+# Dashboard 
+  ApiGatewayBaseAPIDashboardResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt Api.RootResourceId
+      PathPart: 'dashboard'
+      RestApiId: !Ref Api
+
+  ApiGatewayBaseAPIDashboardProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayBaseAPIDashboardResource
+      PathPart: '{proxy+}'
+      RestApiId: !Ref Api
+
+  ApiRouteDashboardMethod:
+    Type: "AWS::ApiGateway::Method"
+    DependsOn:
+      - "ApiGatewayBaseAPIDashboardProxyResource"
+    Properties:
+      HttpMethod: ANY
+      ResourceId: !Ref ApiGatewayBaseAPIDashboardProxyResource
+      RestApiId: !Ref Api
+      AuthorizationType: NONE
+      RequestParameters:
+        method.request.path.proxy: true
+      Integration:
+        CacheKeyParameters:
+          - 'method.request.path.proxy'
+        RequestParameters:
+          integration.request.path.proxy: 'method.request.path.proxy'
+        IntegrationHttpMethod: ANY
+        Type: HTTP_PROXY
+        Uri: http://metaflow-visualiser.s3-website-eu-west-1.amazonaws.com/{proxy}
+        PassthroughBehavior: WHEN_NO_MATCH
+        IntegrationResponses:
+          - StatusCode: 200
+
   ApiGatewayBaseFlowsResource:
     Type: AWS::ApiGateway::Resource
     Properties:
       ParentId: !GetAtt Api.RootResourceId
       PathPart: 'flows'
       RestApiId: !Ref Api
-
-  OptionsMethod:
-    Type: AWS::ApiGateway::Method
-    Properties:
-      AuthorizationType: NONE
-      RestApiId:
-        Ref: Api
-      ResourceId:
-        Ref: ApiGatewayBaseFlowsResource
-      HttpMethod: OPTIONS
-      Integration:
-        IntegrationResponses:
-        - StatusCode: 200
-          ResponseParameters:
-            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-            method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
-            method.response.header.Access-Control-Allow-Origin: "'*'"
-          ResponseTemplates:
-            application/json: ''
-        PassthroughBehavior: WHEN_NO_MATCH
-        RequestTemplates:
-          application/json: '{"statusCode": 200}'
-        Type: MOCK
-      MethodResponses:
-      - StatusCode: 200
-        ResponseModels:
-          application/json: 'Empty'
-        ResponseParameters:
-            method.response.header.Access-Control-Allow-Headers: false
-            method.response.header.Access-Control-Allow-Methods: false
-            method.response.header.Access-Control-Allow-Origin: false
 
   ApiRouteFlowsMethod:
     Type: "AWS::ApiGateway::Method"
@@ -91,6 +99,7 @@ Resources:
       PathPart: 'count'
       RestApiId: !Ref Api
 
+  
   ApiRouteCountMethod:
     Type: "AWS::ApiGateway::Method"
     Properties:
@@ -178,6 +187,7 @@ Resources:
       PathPart: '{timestamp}'
       RestApiId: !Ref Api
 
+
   ApiRouteRunSinceMethod:
     Type: "AWS::ApiGateway::Method"
     Properties:
@@ -202,6 +212,7 @@ Resources:
       PathPart: 'recent'
       RestApiId: !Ref Api
 
+
   ApiRouteRecentMethod:
     Type: "AWS::ApiGateway::Method"
     Properties:
@@ -225,6 +236,7 @@ Resources:
       ParentId: !Ref ApiGatewayFlowNameResource
       PathPart: 'last'
       RestApiId: !Ref Api
+
 
   ApiRouteLastRunMethod:
     Type: "AWS::ApiGateway::Method"
@@ -257,6 +269,7 @@ Resources:
       ParentId: !Ref ApiGatewayFlowRunResource
       PathPart: '{run_id}'
       RestApiId: !Ref Api
+
 
   ApiRouteFlowRunMethod:
     Type: "AWS::ApiGateway::Method"
@@ -297,7 +310,6 @@ Resources:
           - lambdaArn: !GetAtt "DashboardApiLambda.Arn"
       ResourceId: !Ref ApiGatewayRunArtifactsResource
       RestApiId: !Ref "Api"
-
 
   ApiGatewayIamRole:
     Type: AWS::IAM::Role
