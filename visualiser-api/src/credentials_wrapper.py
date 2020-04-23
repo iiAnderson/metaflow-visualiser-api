@@ -5,13 +5,14 @@ import time
 from exception import MetaflowException
 
 CREDENTIALS_API_URL = os.environ['CREDENTIALS_API_URL']
-API_KEY = os.environ['API_KEY']
 
 def lambda_handler(event, context):
 
+    x_api_key = event['headers']['x-api-key']
+
     response = requests.get(
         CREDENTIALS_API_URL,
-        headers={'x-api-key': API_KEY}
+        headers={'x-api-key': x_api_key}
     )
 
     if response.status_code == requests.codes.ok:
