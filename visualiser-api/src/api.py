@@ -46,7 +46,14 @@ def route_flows():
 
 def all_runs_since(flow_name=None,timestamp=(datetime.now() - timedelta(days=1)).timestamp()):
 
-    runs = FlowWrapper(flow_name=flow_name).get_runs(timestamp=timestamp)
+    runs = []
+
+    if flow_name is None:
+        for flow in MetaflowWrapper().get_flows():
+            print(flow)
+            runs.extend(flow.get_runs(timestamp=timestamp))
+    else:
+        runs = FlowWrapper(flow_name=flow_name).get_runs(timestamp=timestamp)
 
     return { "data": sorted(runs, key = lambda r: (r['created_at']), reverse=True) }
 
@@ -188,12 +195,12 @@ def get_run_data(flow=None, run_id=None):
 
 '''
 
-def get_run_artifacts(flow=None, run_id=None):
-    if flow is None or run_id is None:
+def get_run_artifacts(flow_name=None, run_id=None):
+    if flow_name is None or run_id is None:
         raise MetaflowException(400, "Invalid parameters")
 
     namespace(None)
-    run = RunWrapper.create_from_lookup(flow, run_id)
+    run = RunWrapper.create_from_lookup(flow_name, run_id)
 
     return {
         "data": run.get_run_output_data()
@@ -205,11 +212,11 @@ registered_endpoints = {
     "/flows/count": count_runs, # Count all flows
     "/flows/all/{timestamp}": all_runs_since, # Returns all runs within timestamp
     "/flows/{flow_name}/count": count_runs, # Returns count of runs for flow
-    "/flows/{flow_name}/run/{run_id}": get_run_data, # Returns specific run
+    "/flows/{flow_name}/runs/{run_id}": get_run_data, # Returns specific run
     "/flows/{flow_name}/{timestamp}": all_runs_since, # Returns runs filtered by time
     "/flows/{flow_name}/recent": get_most_recent, # Returns runs filtered by time
     "/flows/{flow_name}/last": get_last_n, # Returns runs filtered by time
-    "/flows/{flow_name}/run/{run_id}/artifacts": get_run_artifacts
+    "/flows/{flow_name}/runs/{run_id}/artifacts": get_run_artifacts
 }
 
 def handle_request(event, context):

@@ -1,9 +1,0 @@
-{
-    "METAFLOW_DATASTORE_SYSROOT_S3": "s3://metaflow-metadata-bucket",
-    "METAFLOW_DATATOOLS_SYSROOT_S3": "s3://metaflow-metadata-bucket/data",
-    "METAFLOW_DEFAULT_DATASTORE": "s3",
-    "METAFLOW_DEFAULT_METADATA": "service",
-    "METAFLOW_SERVICE_INTERNAL_URL": "http://metaflo-NLB-1GIDS8ZMGJJSI-5445dce759eb3f00.elb.eu-west-1.amazonaws.com/",
-    "METAFLOW_SERVICE_URL": "https://5sqcgnuyte.execute-api.eu-west-1.amazonaws.com/api/",
-    "METAFLOW_SERVICE_AUTH_KEY": "yvhNDfEzcRa5fxKq2ZELda1zk8wNXxMs17Jt4OGs"
-}
