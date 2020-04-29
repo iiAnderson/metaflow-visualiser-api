@@ -37,7 +37,13 @@ def run_flows_count_with_flow(flow_name):
 
 @app.route("/flows/<flow_name>/recent")
 def most_recent_run_for_flow(flow_name):
-    return get_most_recent(flow_name)
+    import time
+    st = time.time()
+    r = get_most_recent(flow_name)
+    end = time.time()
+    print(end-st)
+
+    return r
 
 @app.route("/flows/<flow_name>/last")
 def get_last_5_runs(flow_name):
@@ -48,5 +54,3 @@ def after_request(response):
     header = response.headers
     header['Access-Control-Allow-Origin'] = '*'
     return response
-
-

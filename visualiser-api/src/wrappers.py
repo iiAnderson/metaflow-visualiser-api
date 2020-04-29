@@ -210,14 +210,30 @@ class RunWrapper():
         for s in self._run.steps():
             yield StepWrapper(step_name=s.pathspec)
 
-    @metadata
+    # @metadata
     def get_formatted_steps(self):
+        # results = []
+        # st = time.time()
+        # for s in self._run.steps():
+        #     results.append(StepWrapper(s.pathspec).json_without_tasks())
+        # e = time.time()
+        # print(e-st)
+        # return results
+
         results = []
         st = time.time()
-        for s in self._run.steps():
-            results.append(StepWrapper(s.pathspec).json_without_tasks())
-        e = time.time()
+
+        for step in Run(f"{self.flow_name}/{self.run_id}").steps():
+            results.append({
+                "step": step.path_components[-1],
+                "finished_at": step.finished_at,
+                "created_at": step.created_at
+                # "tasks": self.get_formatted_tasks()
+            })
+        # e = time.time()
+        # print(e-st)
         return results
+
 
     @metadata
     def _parse_tags(self, tags, key_string):
@@ -229,9 +245,28 @@ class RunWrapper():
     @metadata
     def get_run_output_data(self):
 
-        task_wrapper = TaskWrapper(self._run.end_task.pathspec)
+        st = time.time()
+        task_wrapper = Task(self._run.end_task.pathspec)
 
-        return task_wrapper.get_data()
+        return_dataset = {}
+
+        for data in task_wrapper.artifacts:
+            print(data.pathspec)
+            wrapper = {
+                "data": data.data,
+                "artifact_name": data.path_components[-1],
+                "finished_at": data.finished_at
+            }
+            return_dataset[wrapper['artifact_name']] = wrapper
+        end = time.time()
+        print(end-st)
+        return return_dataset
+
+        # task_wrapper = TaskWrapper(self._run.end_task.pathspec)
+        # d = task_wrapper.get_data()
+        # end = time.time()
+        # print(end-st)
+        # return d
 
     def json(self):
         return {
@@ -337,6 +372,7 @@ class DataArtifactWrapper(DataArtifact):
         return data
 
     def json(self):
+        s = time.time()
         json_obj = {
             "data": self._format(self.data),
             "artifact_name": self.path_components[-1],
@@ -347,6 +383,9 @@ class DataArtifactWrapper(DataArtifact):
             json.dumps(json_obj)
 
             # Successfully serialised, so we know it's serialisable
+
+            e = time.time()
+            print(f"{e-s} json formatting")
             return json_obj
         except (TypeError, OverflowError):
             return {
