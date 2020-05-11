@@ -6,3 +6,7 @@ __pycache__
 visualiser-api/src/config/config.json
 dist/
 .DS_Store
+**/.DS_Store
+visualiser-api/.DS_Store
+visualiser-api/src/.DS_Store
+events-processor/src/.DS_Store

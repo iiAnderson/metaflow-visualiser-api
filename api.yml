@@ -6,7 +6,7 @@ Parameters:
 
   DashboardLambdaPath:
     Type: String
-  MetaflowBucketArn:
+  MetaflowBucket:
     Type: String
   ArtifactBucket:
     Type: String
@@ -16,12 +16,18 @@ Parameters:
     Type: String
   MetaflowCredentialsAutomatorUrl:
     Type: String
-  MetaflowApiKey:
-    Type: String
   MetaflowApiKeyReference:
+    Type: String
+  DashbordHostBaseUrl:
     Type: String
 
 Resources:
+
+  ApiHostingBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: metaflow-dashboard
 
   Api:
     Type: "AWS::ApiGateway::RestApi"
@@ -29,8 +35,8 @@ Resources:
       Name: !Sub ${AWS::StackName}-api
       Description: "Metaflow Dashboard API"
 
+  # Dashboard Configuration
 
-# Dashboard 
   ApiGatewayBaseAPIDashboardResource:
     Type: AWS::ApiGateway::Resource
     Properties:
@@ -63,10 +69,12 @@ Resources:
           integration.request.path.proxy: 'method.request.path.proxy'
         IntegrationHttpMethod: ANY
         Type: HTTP_PROXY
-        Uri: http://metaflow-visualiser.s3-website-eu-west-1.amazonaws.com/{proxy}
+        Uri: !Sub ${DashbordHostBaseUrl}/{proxy}
         PassthroughBehavior: WHEN_NO_MATCH
         IntegrationResponses:
           - StatusCode: 200
+
+  # Api Setup
 
   ApiGatewayBaseFlowsResource:
     Type: AWS::ApiGateway::Resource
@@ -370,6 +378,9 @@ Resources:
       KeyType: API_KEY
       UsagePlanId: !Ref ApiUsagePlan
 
+
+  # API Processor (Lambda)
+
   DashboardApiLambda:
     Type: "AWS::Lambda::Function"
     Properties:
@@ -388,7 +399,6 @@ Resources:
           EVENTS_SOURCE_STORE: !Ref MetaflowEventStore
           EVENTS_SOURCE_INDEX: !Ref MetaflowEventStoreIndex
           CREDENTIALS_API_URL: !Ref MetaflowCredentialsAutomatorUrl
-          API_KEY: !Ref MetaflowApiKey
           METAFLOW_HOME: '/tmp/' 
 
   ApiGatewayLambdaInvoke:
@@ -442,10 +452,8 @@ Resources:
                 Action:
                   - s3:Get*
                 Resource: 
-                    - !Sub
-                        - ${MetaflowBucketArn}/* 
-                        - { BucketName: !Ref MetaflowBucketArn }
-                    - !Ref MetaflowBucketArn
+                    - !Sub 'arn:aws:s3:::${MetaflowBucket}'
+                    - !Sub 'arn:aws:s3:::${MetaflowBucket}/*'
         - PolicyName: XrayPutTracePolicy
           PolicyDocument:
             Version: "2012-10-17"
