@@ -1,0 +1,3 @@
+[submodule "dashboard-ui/metaflow-visualiser"]
+	path = dashboard-ui/metaflow-visualiser
+	url = https://github.com/iiAnderson/metaflow-visualiser.git
