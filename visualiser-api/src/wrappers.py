@@ -23,6 +23,7 @@ def metadata(func):
         run = args[0]
 
         if run.cache:
+            namespace(None)
             run._run = Run(run.pathspec)
             run.cache = False
 
@@ -35,11 +36,12 @@ class MetaflowWrapper():
 
     def __init__(self):
         super().__init__()
+        namespace(None)
         self._metaflow = Metaflow()
 
     def get_flows(self):
-        for f in self._metaflow.flows:
-            yield FlowWrapper(flow_name=f.path_components[-1])
+
+        return [FlowWrapper(flow_name=f.path_components[-1]) for f in self._metaflow.flows]
 
     def get_formatted_flows(self):
 
@@ -69,9 +71,19 @@ class FlowWrapper():
         dynamodb = boto3.resource('dynamodb', region_name='eu-west-1')
         self._table = dynamodb.Table('metaflow-events-store')
 
-    def get_all_runs(self):
+    def get_all_runs(self, timestamp=None):
 
-        response = self._table.scan()
+        if timestamp:
+            kce = Key('flow_name').eq(self._flow_name) & Key(
+                'created_at').between(int(timestamp), int(datetime.now().timestamp()))
+
+            response = self._table.query(
+                KeyConditionExpression=kce, ScanIndexForward=False)
+        else:
+            fe = Key('flow_name').eq(self._flow_name)
+            response = self._table.scan(
+                FilterExpression=fe
+            )
 
         if 'Items' in response:
             for item in response['Items']:
@@ -92,11 +104,11 @@ class FlowWrapper():
     def get_last_successful_run(self):
 
         kce = Key('flow_name').eq(self._flow_name) & Key(
-            'run_id').between(0, 10000)
+            'run_id').between(0, 1000000)
         fe = Key('success').eq(True)
         output = self._table.query(KeyConditionExpression=kce, FilterExpression=fe,
-                                   ScanIndexForward=False, Limit=1, IndexName=EVENTS_SOURCE_INDEX)
-
+                                   ScanIndexForward=False, IndexName=EVENTS_SOURCE_INDEX)
+        print(output)
         if 'Items' in output:
             return RunWrapper.create_from_cache(output['Items'][0])
 
@@ -121,13 +133,9 @@ class FlowWrapper():
 
         runs = []
 
-        for r in self.get_all_runs():
-            run_date = r.created_at
+        for r in self.get_all_runs(timestamp=timestamp):
+            runs.append(r.json())
 
-            if run_date > int(timestamp):
-                runs.append(r.json())
-            else:
-                break
         print(runs)
         return runs
 
@@ -202,14 +210,30 @@ class RunWrapper():
         for s in self._run.steps():
             yield StepWrapper(step_name=s.pathspec)
 
-    @metadata
+    # @metadata
     def get_formatted_steps(self):
+        # results = []
+        # st = time.time()
+        # for s in self._run.steps():
+        #     results.append(StepWrapper(s.pathspec).json_without_tasks())
+        # e = time.time()
+        # print(e-st)
+        # return results
+
         results = []
         st = time.time()
-        for s in self._run.steps():
-            results.append(StepWrapper(s.pathspec).json_without_tasks())
-        e = time.time()
+
+        for step in Run(f"{self.flow_name}/{self.run_id}").steps():
+            results.append({
+                "step": step.path_components[-1],
+                "finished_at": step.finished_at,
+                "created_at": step.created_at
+                # "tasks": self.get_formatted_tasks()
+            })
+        # e = time.time()
+        # print(e-st)
         return results
+
 
     @metadata
     def _parse_tags(self, tags, key_string):
@@ -221,9 +245,28 @@ class RunWrapper():
     @metadata
     def get_run_output_data(self):
 
-        task_wrapper = TaskWrapper(self._run.end_task.pathspec)
+        st = time.time()
+        task_wrapper = Task(self._run.end_task.pathspec)
 
-        return task_wrapper.get_data()
+        return_dataset = {}
+
+        for data in task_wrapper.artifacts:
+            print(data.pathspec)
+            wrapper = {
+                "data": data.data,
+                "artifact_name": data.path_components[-1],
+                "finished_at": data.finished_at
+            }
+            return_dataset[wrapper['artifact_name']] = wrapper
+        end = time.time()
+        print(end-st)
+        return return_dataset
+
+        # task_wrapper = TaskWrapper(self._run.end_task.pathspec)
+        # d = task_wrapper.get_data()
+        # end = time.time()
+        # print(end-st)
+        # return d
 
     def json(self):
         return {
@@ -329,6 +372,7 @@ class DataArtifactWrapper(DataArtifact):
         return data
 
     def json(self):
+        s = time.time()
         json_obj = {
             "data": self._format(self.data),
             "artifact_name": self.path_components[-1],
@@ -339,6 +383,9 @@ class DataArtifactWrapper(DataArtifact):
             json.dumps(json_obj)
 
             # Successfully serialised, so we know it's serialisable
+
+            e = time.time()
+            print(f"{e-s} json formatting")
             return json_obj
         except (TypeError, OverflowError):
             return {

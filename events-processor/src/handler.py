@@ -54,7 +54,8 @@ def lambda_handler(event, context):
             "finished_at": 0 if run.finished_at == None else int(datetime.strptime(run.finished_at.split(".")[0], '%Y-%m-%dT%H:%M:%S').timestamp()),
             "current_step": step,
             "user": _parse_tags(run.tags, "user"),
-            "tags": run.tags
+            "tags": run.tags,
+            "bucket": bucket_name
         }
 
         print(dynamo_object)

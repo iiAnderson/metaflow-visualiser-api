@@ -1,2 +1,5 @@
 metaflow
 requests
+aws-xray-sdk
+flask
+flask_restful
